@@ -8,12 +8,12 @@ import socket
 import json
 
 BLOCK_DEVICE = 'image'
-BLOCK_SIZE = 16384
+BLOCK_SIZE = 4096
 
 HOST = '127.0.0.1'
 PORT = 5000
 
-client = socket.socket()
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect((HOST, PORT))
 
 STARTTIME = datetime.now()
@@ -52,16 +52,7 @@ if sys.argv[1] == '--copy':
             m.update(read_data)
             h.write(m.hexdigest())
             h.write('\n')
-            # Send to server
-            msg = {"BLOCK_SIZE": BLOCK_SIZE, "BLOCK_START": f.tell()}
-            client.send(json.dumps(msg).encode())
-            if client.recv(1024).decode() == "ack":
-                # Send block
-                client.send(read_data)
-            if not client.recv(1024).decode() == "written":
-                print("Server could not write...")
-                sys.exit(1)
-
+            client.send(read_data)
     print(p)
 
 elif sys.argv[1] == '--sync':
