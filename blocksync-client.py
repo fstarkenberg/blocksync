@@ -68,7 +68,8 @@ elif sys.argv[1] == '--sync':
                 # No change
                 pass
             else:
-                msg = {"BLOCK_SIZE": BLOCK_SIZE, "BLOCK_START": f.tell()}
+                # f.tell has already moved on to next offset, so we need to subtract the block size
+                msg = {"BLOCK_SIZE": BLOCK_SIZE, "BLOCK_START": (f.tell() - BLOCK_SIZE)}
                 client.send(json.dumps(msg).encode())
                 if client.recv(1024).decode() == "ack":
                     # Send block
