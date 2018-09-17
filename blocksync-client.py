@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import sys
 import os
 from datetime import datetime
@@ -7,9 +6,8 @@ import hashlib
 import socket
 import json
 
-BLOCK_DEVICE = 'image'
-BLOCK_SIZE = 16384
 
+BLOCK_SIZE = 16384
 HOST = '127.0.0.1'
 PORT = 5000
 
@@ -39,13 +37,22 @@ if len(sys.argv) < 2:
     print("USAGE: %s --copy | --sync --sparse /dev/blkdevice" % sys.argv[0])
     sys.exit(0)
 
+# Todo: fix
+if sys.argv[2] == '--sparse':
+    BLOCK_DEVICE = sys.argv[3]
+else:
+    BLOCK_DEVICE = sys.argv[2]
+
 SIZE = DEVICE_SIZE(BLOCK_DEVICE)
 
+i = 0
 if sys.argv[1] == '--copy':
     with open(BLOCK_DEVICE, 'rb') as f, open('disk.md5', 'w') as h:
         while f.tell() < SIZE:
             p = progress(SIZE, f.tell())
-            print(p, end='\r')
+            if i % 10000 is 0:
+                # Only print progress every nth loop
+                print(p, end='\r')
             read_data = f.read(BLOCK_SIZE)
             # Save block hash to a file
             m = hashlib.md5()
@@ -53,15 +60,17 @@ if sys.argv[1] == '--copy':
             h.write(m.hexdigest())
             h.write('\n')
             if '--sparse' in sys.argv:
-                # Don't send empty blocks
+                # Skip empty blocks
                 if read_data.count(read_data[0]) == len(read_data):
                     continue
-            msg = {"BLOCK_START": (f.tell() - BLOCK_SIZE)}
-            client.send(json.dumps(msg).encode())
-            client.send(read_data)
-            #client.send(read_data)
-            #client.send(msg)
+            # First two bytes contain start block number
+            BLOCK_START = str(f.tell() - BLOCK_SIZE).zfill(14)
+            BLOCK = b"".join([bytes(BLOCK_START, encoding='utf-8'), read_data])
+            client.send(BLOCK)
+            i += 1
+
     print(p)
+    client.close()
 
 elif sys.argv[1] == '--sync':
     with open(BLOCK_DEVICE, 'rb') as f, open('disk.md5', 'r') as h:
@@ -78,19 +87,13 @@ elif sys.argv[1] == '--sync':
             m.update(read_data)
             if m.hexdigest() == hash.strip():
                 # No change
-                pass
+                continue
             else:
-                # f.tell has already moved on to next offset, so we need to subtract the block size
-                msg = {"BLOCK_START": (f.tell() - BLOCK_SIZE)}
-                client.send(json.dumps(msg).encode())
-                if client.recv(1024).decode() == "ack":
-                    # Send block
-                    client.send(read_data)
-                if not client.recv(1024).decode() == "written":
-                    print("Server could not write...")
-                    sys.exit(1)
+                # First two bytes contain start block number
+                BLOCK_START = str(f.tell() - BLOCK_SIZE).zfill(14)
+                BLOCK = b"".join([bytes(BLOCK_START, encoding='utf-8'), read_data])
+                client.send(BLOCK)
                 CHANGE_COUNTER += 1
     print(p)
     print("%d blocks have changed. ~%d MB." % (CHANGE_COUNTER, (CHANGE_COUNTER * BLOCK_SIZE)/1000000))
 
-client.close()

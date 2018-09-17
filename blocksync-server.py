@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-
 import sys
 import socket
 import json
 
-BLOCK_DEVICE = 'new-image'
 BLOCK_SIZE = 16384
-
 HOST = "127.0.0.1"
 PORT = 5000
 
-#if len(sys.argv) < 2:
-#    print("USAGE: %s /dev/blkdevice" % sys.argv[0])
-#    sys.exit(0)
+if len(sys.argv) < 2:
+    print("USAGE: %s /dev/blkdevice" % sys.argv[0])
+    sys.exit(0)
+
+BLOCK_DEVICE = sys.argv[1]
 
 server = socket.socket()
 server.bind((HOST, PORT))
@@ -22,27 +21,25 @@ print("Listening...")
 conn, addr = server.accept()
 print ("Connection from: " + str(addr))
 f = open(BLOCK_DEVICE, 'rb+')
+BUF_SIZE = BLOCK_SIZE + 14
+
 while True:
-    data = conn.recv(BLOCK_SIZE)
+    data = conn.recv(BUF_SIZE)
     if not data: break
 
+    # Unpack block, first two bytes are block start number
+    BLOCK_START, BLOCK = data[:14], data[14:]
+
     try:
-        msg = json.loads(data.decode())
-        BLOCK_START = msg['BLOCK_START']
-    except (json.decoder.JSONDecodeError, UnicodeDecodeError):
+        BLOCK_START = int(BLOCK_START)
+    except ValueError:
         continue
 
-    # Send ack
-    #conn.send("ack".encode())
-
-    # Block
-    if BLOCK_START:
-        print("Writing block %d" % BLOCK_START, end='\r')
-        f.seek(BLOCK_START)
-        f.write(data)
+    f.seek(BLOCK_START)
+    f.write(BLOCK)
 
 f.close()
 print("Finished writing...")
 conn.close()
 print("Client disconnected...")
-
+sys.exit(0)
