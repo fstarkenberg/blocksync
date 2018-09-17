@@ -8,7 +8,7 @@ import socket
 import json
 
 BLOCK_DEVICE = 'image'
-BLOCK_SIZE = 4096
+BLOCK_SIZE = 16384
 
 HOST = '127.0.0.1'
 PORT = 5000
@@ -36,7 +36,7 @@ def progress(SIZE, CURRENT):
     return "%d GB/%d GB - %d MB/s - %s" % (CURRENT_GB, SIZE_GB, SPEED, CURRENT_TIME)
 
 if len(sys.argv) < 2:
-    print("USAGE: %s --copy | --sync /dev/blkdevice" % sys.argv[0])
+    print("USAGE: %s --copy | --sync --sparse /dev/blkdevice" % sys.argv[0])
     sys.exit(0)
 
 SIZE = DEVICE_SIZE(BLOCK_DEVICE)
@@ -52,7 +52,15 @@ if sys.argv[1] == '--copy':
             m.update(read_data)
             h.write(m.hexdigest())
             h.write('\n')
+            if '--sparse' in sys.argv:
+                # Don't send empty blocks
+                if read_data.count(read_data[0]) == len(read_data):
+                    continue
+            msg = {"BLOCK_START": (f.tell() - BLOCK_SIZE)}
+            client.send(json.dumps(msg).encode())
             client.send(read_data)
+            #client.send(read_data)
+            #client.send(msg)
     print(p)
 
 elif sys.argv[1] == '--sync':
@@ -60,6 +68,10 @@ elif sys.argv[1] == '--sync':
         CHANGE_COUNTER = 0
         for hash in h.readlines():
             read_data = f.read(BLOCK_SIZE)
+            if '--sparse' in sys.argv:
+                # Skip empty blocks
+                if read_data.count(read_data[0]) == len(read_data):
+                    continue
             p = progress(SIZE, f.tell())
             print(p, end='\r')
             m = hashlib.md5()
@@ -69,7 +81,7 @@ elif sys.argv[1] == '--sync':
                 pass
             else:
                 # f.tell has already moved on to next offset, so we need to subtract the block size
-                msg = {"BLOCK_SIZE": BLOCK_SIZE, "BLOCK_START": (f.tell() - BLOCK_SIZE)}
+                msg = {"BLOCK_START": (f.tell() - BLOCK_SIZE)}
                 client.send(json.dumps(msg).encode())
                 if client.recv(1024).decode() == "ack":
                     # Send block
